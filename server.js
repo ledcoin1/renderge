@@ -1,44 +1,49 @@
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-let users = {}; // userId -> { balance: 100 }
+// MongoDB
+mongoose.connect(process.env.MONGO_URI);
 
-app.post("/getBalance", (req, res) => {
+const User = mongoose.model("User", {
+  userId: String,
+  balance: { type: Number, default: 100 }
+});
+
+// Ойыншы кіргенде — базаға сақтаймыз
+app.post("/user", async (req, res) => {
   const { userId } = req.body;
-  if (!users[userId]) users[userId] = { balance: 100 };
-  res.json({ balance: users[userId].balance });
+
+  let user = await User.findOne({ userId });
+
+  if (!user) {
+    user = await User.create({ userId, balance: 100 });
+  }
+
+  res.json(user);
 });
 
-app.post("/play", (req, res) => {
-  const { userId, choice, bet } = req.body;
-  if (!users[userId]) users[userId] = { balance: 100 };
-
-  if (users[userId].balance < bet) return res.json({ error: "Жеткіліксіз баланс" });
-
-  const options = ["тас", "қағаз", "қайшы"];
-  const computerChoice = options[Math.floor(Math.random() * 3)];
-
-  let result;
-  if (choice === computerChoice) result = "draw";
-  else if (
-    (choice === "тас" && computerChoice === "қайшы") ||
-    (choice === "қағаз" && computerChoice === "тас") ||
-    (choice === "қайшы" && computerChoice === "қағаз")
-  ) result = "win";
-  else result = "lose";
-
-  if (result === "win") users[userId].balance += bet;
-  else if (result === "lose") users[userId].balance -= bet;
-
-  res.json({ result, computerChoice, balance: users[userId].balance });
+// Барлық ойыншыларды көру
+app.get("/users", async (req, res) => {
+  const users = await User.find();
+  res.json(users);
 });
 
-const PORT = process.env.PORT || 3000;
+// Баланс өзгерту
+app.post("/setBalance", async (req, res) => {
+  const { userId, balance } = req.body;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  const user = await User.findOneAndUpdate(
+    { userId },
+    { balance },
+    { new: true }
+  );
+
+  res.json(user);
 });
+
+app.listen(3000, () => console.log("Server running"));

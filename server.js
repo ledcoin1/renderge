@@ -1,108 +1,40 @@
-// server.js
-const express = require("express");
-const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
-
+const express = require('express');
+const fs = require('fs');
+const cors = require('cors');
 const app = express();
-app.use(cors());
 app.use(express.json());
+app.use(cors()); // Mini App серверге сұрау жіберу үшін
 
-const PORT = process.env.PORT || 10000;
-const DB_FILE = path.join(__dirname, "db.json");
+const BALANCE_FILE = 'balances.json';
 
-// ensure db exists
-if (!fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify({ users: {} }, null, 2));
+// Баланстарды оқу/жазу
+function readBalances() {
+  if (!fs.existsSync(BALANCE_FILE)) return {};
+  return JSON.parse(fs.readFileSync(BALANCE_FILE));
+}
+function writeBalances(balances) {
+  fs.writeFileSync(BALANCE_FILE, JSON.stringify(balances, null, 2));
 }
 
-function readDB() {
-  return JSON.parse(fs.readFileSync(DB_FILE));
-}
-function writeDB(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-// health
-app.get("/", (req, res) => res.json({ status: "ok" }));
-
-// --- getBalance (keeps compatibility with frontend) ---
-// expects { userId } in POST body
-app.post("/getBalance", (req, res) => {
-  try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: "userId required" });
-
-    const db = readDB();
-    if (!db.users[userId]) db.users[userId] = { balance: 100 };
-    writeDB(db);
-    return res.json({ balance: db.users[userId].balance });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "server error" });
-  }
+// Баланс алу
+app.get('/get_balance', (req, res) => {
+  const userId = req.query.user_id;
+  if (!userId) return res.status(400).json({ error: 'user_id керек' });
+  const balances = readBalances();
+  if (!balances[userId]) balances[userId] = 100; // жаңа ойыншыға бастапқы баланс
+  writeBalances(balances);
+  res.json({ balance: balances[userId] });
 });
 
-// --- play endpoint (keeps old game logic) ---
-// expects { userId, choice, bet }
-app.post("/play", (req, res) => {
-  try {
-    const { userId, choice, bet } = req.body;
-    if (!userId || !choice || typeof bet !== "number") return res.status(400).json({ error: "invalid data" });
-
-    const options = ["тас", "қағаз", "қайшы"];
-    if (!options.includes(choice)) return res.status(400).json({ error: "invalid choice" });
-
-    const db = readDB();
-    if (!db.users[userId]) db.users[userId] = { balance: 100 };
-
-    if (db.users[userId].balance < bet) return res.json({ error: "Жеткіліксіз баланс" });
-
-    const computerChoice = options[Math.floor(Math.random() * options.length)];
-    let result;
-    if (choice === computerChoice) result = "draw";
-    else if (
-      (choice === "тас" && computerChoice === "қайшы") ||
-      (choice === "қағаз" && computerChoice === "тас") ||
-      (choice === "қайшы" && computerChoice === "қағаз")
-    ) result = "win";
-    else result = "lose";
-
-    if (result === "win") db.users[userId].balance += bet;
-    else if (result === "lose") db.users[userId].balance -= bet;
-
-    // save a short history (optional)
-    db.users[userId].history = db.users[userId].history || [];
-    db.users[userId].history.unshift({
-      date: new Date().toISOString(),
-      choice, computerChoice, result, bet
-    });
-    if (db.users[userId].history.length > 50) db.users[userId].history.pop();
-
-    writeDB(db);
-
-    return res.json({ result, computerChoice, balance: db.users[userId].balance });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "server error" });
-  }
+// Баланс жаңарту
+app.post('/update_balance', (req, res) => {
+  const { user_id, amount } = req.body;
+  if (!user_id || typeof amount !== 'number') return res.status(400).json({ error: 'Дұрыс дерек жоқ' });
+  const balances = readBalances();
+  if (!balances[user_id]) balances[user_id] = 100;
+  balances[user_id] += amount;
+  writeBalances(balances);
+  res.json({ balance: balances[user_id] });
 });
 
-// --- simple admin-ish endpoints (optional) ---
-app.get("/users", (req, res) => {
-  const db = readDB();
-  res.json(db.users);
-});
-
-app.post("/setBalance", (req, res) => {
-  const { userId, balance } = req.body;
-  if (!userId || typeof balance !== "number") return res.status(400).json({ error: "invalid data" });
-
-  const db = readDB();
-  db.users[userId] = db.users[userId] || { balance: 100, history: [] };
-  db.users[userId].balance = balance;
-  writeDB(db);
-  res.json(db.users[userId]);
-});
-
-app.listen(PORT, () => console.log("Server running on port", PORT));
+app.listen(3000, () => console.log('Server running on http://localhost:3000'));

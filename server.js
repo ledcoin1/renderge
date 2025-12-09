@@ -65,3 +65,23 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
+// 🔹 Барлық ойыншыларды көру (админ)
+app.get('/admin/balances', (req, res) => {
+  const balances = readBalances();
+  res.json(balances);
+});
+
+// 🔹 Қолмен баланс орнату (админ)
+app.post('/admin/set_balance', (req, res) => {
+  const { user_id, balance } = req.body;
+  if (!user_id || typeof balance !== 'number') {
+    return res.status(400).json({ error: 'Қате дерек' });
+  }
+
+  const balances = readBalances();
+  balances[user_id] = balance;
+  writeBalances(balances);
+
+  res.json({ success: true, user_id, balance });
+});
+

@@ -1,56 +1,58 @@
+// server.js
 const express = require('express');
-const fs = require('fs');
 const cors = require('cors');
+const { MongoClient, ObjectId } = require('mongodb');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-const BALANCE_FILE = './balances.json';
+// MongoDB қосылым деректері
+const uri = "mongodb+srv://ashamosugan_db_user:PASSWORD@cluster0.wmdzsm8.mongodb.net/?retryWrites=true&w=majority";
+const client = new MongoClient(uri);
+let balancesCollection;
 
-// файл оқу
-function readBalances() {
-  if (!fs.existsSync(BALANCE_FILE)) return {};
-  return JSON.parse(fs.readFileSync(BALANCE_FILE, 'utf8'));
+// MongoDB қосу
+async function connectDB() {
+  await client.connect();
+  const db = client.db("telegram_balance_app");
+  balancesCollection = db.collection("balances");
+  console.log("Connected to MongoDB");
 }
 
-// файл жазу
-function writeBalances(data) {
-  fs.writeFileSync(BALANCE_FILE, JSON.stringify(data, null, 2));
-}
+connectDB().catch(console.error);
 
-// ✅ қарапайым тест page
-app.get('/', (req, res) => {
-  res.send('Server OK');
+// Баланс алу
+app.get("/get_balance", async (req, res) => {
+  const userId = req.query.user_id;
+  if (!userId) return res.status(400).json({ error: "user_id керек" });
+
+  let user = await balancesCollection.findOne({ user_id: userId });
+  if (!user) {
+    user = { user_id: userId, balance: 0 };
+    await balancesCollection.insertOne(user);
+  }
+  res.json({ balance: user.balance });
 });
 
-// ✅ ойыншы балансын алу
-app.get('/get_balance', (req, res) => {
-  const id = req.query.user_id;
-  if (!id) return res.json({ error: 'no user_id' });
-
-  const data = readBalances();
-  if (!data[id]) data[id] = 0;
-  writeBalances(data);
-
-  res.json({ balance: data[id] });
-});
-
-// ✅ сен қолмен баланс өзгертетін админ API
-app.post('/admin/set', (req, res) => {
+// Баланс жаңарту (админ үшін)
+app.post("/update_balance", async (req, res) => {
   const { user_id, balance } = req.body;
+  if (!user_id || typeof balance !== "number") return res.status(400).json({ error: "Дұрыс дерек жоқ" });
 
-  const data = readBalances();
-  data[user_id] = balance;
-  writeBalances(data);
-
-  res.json({ ok: true });
+  const result = await balancesCollection.updateOne(
+    { user_id },
+    { $set: { balance } },
+    { upsert: true }
+  );
+  res.json({ success: true });
 });
 
-// ✅ барлық ойыншыларды көру
-app.get('/admin/all', (req, res) => {
-  res.json(readBalances());
+// Тек тест үшін root
+app.get("/", (req, res) => {
+  res.send("Telegram Mini App Backend is running!");
 });
 
+// Render-ге арналған порт
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Run on', PORT));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

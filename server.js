@@ -63,3 +63,14 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   connectDB();
 });
+
+// Барлық ойыншыларды алу (админ үшін)
+app.get('/get_all_users', async (req, res) => {
+  try {
+    const allUsers = await users.find().toArray();
+    res.json(allUsers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});

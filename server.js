@@ -8,7 +8,7 @@ app.use(express.json());
 app.use(cors());
 
 // MongoDB қосылым деректері
-const uri = "mongodb+srv://ashamosugan_db_user:PASSWORD@cluster0.wmdzsm8.mongodb.net/?retryWrites=true&w=majority";
+const uri = "mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/?retryWrites=true&w=majority";
 const client = new MongoClient(uri);
 let balancesCollection;
 
@@ -56,3 +56,4 @@ app.get("/", (req, res) => {
 // Render-ге арналған порт
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+

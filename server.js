@@ -1,87 +1,50 @@
-const express = require("express");
-const fs = require("fs");
-const cors = require("cors");
-const path = require("path");
-
+const express = require('express');
+const fs = require('fs');
+const cors = require('cors');
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-const DATA_FILE = path.join(__dirname, "balances.json");
+const FILE = 'balances.json';
 
-function readData() {
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, "{}");
-  }
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+// Егер файл жоқ болса – жасаймыз
+if (!fs.existsSync(FILE)) {
+  fs.writeFileSync(FILE, JSON.stringify({}, null, 2));
 }
 
-function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+// Балансты оқимыз
+function readBalances() {
+  return JSON.parse(fs.readFileSync(FILE));
 }
 
-app.get("/", (req, res) => {
-  res.send("Backend is running");
-});
+// Балансты жазамыз
+function saveBalances(data) {
+  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+}
 
-app.get("/get_balance", (req, res) => {
+// Mini App балансты сұрайды
+app.get('/balance', (req, res) => {
   const userId = req.query.user_id;
+  if (!userId) return res.json({ balance: 0 });
 
-  if (!userId) {
-    return res.status(400).json({ error: "user_id жоқ" });
+  const balances = readBalances();
+
+  if (!balances[userId]) {
+    balances[userId] = 0;
+    saveBalances(balances);
   }
 
-  const data = readData();
-
-  if (!data[userId]) {
-    data[userId] = 100;
-    writeData(data);
-  }
-
-  res.json({ balance: data[userId] });
+  res.json({ balance: balances[userId] });
 });
 
-app.post("/update_balance", (req, res) => {
-  const { user_id, amount } = req.body;
-
-  if (!user_id || typeof amount !== "number") {
-    return res.status(400).json({ error: "Қате дерек" });
-  }
-
-  const data = readData();
-
-  if (!data[user_id]) {
-    data[user_id] = 100;
-  }
-
-  data[user_id] += amount;
-  writeData(data);
-
-  res.json({ balance: data[user_id] });
-});
-
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
-});
-// 🔹 Барлық ойыншыларды көру (админ)
-app.get('/admin/balances', (req, res) => {
+// Админ үшін — барлық баланстарды көру
+app.get('/admin', (req, res) => {
   const balances = readBalances();
   res.json(balances);
 });
 
-// 🔹 Қолмен баланс орнату (админ)
-app.post('/admin/set_balance', (req, res) => {
-  const { user_id, balance } = req.body;
-  if (!user_id || typeof balance !== 'number') {
-    return res.status(400).json({ error: 'Қате дерек' });
-  }
-
-  const balances = readBalances();
-  balances[user_id] = balance;
-  writeBalances(balances);
-
-  res.json({ success: true, user_id, balance });
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
-

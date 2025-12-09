@@ -21,7 +21,7 @@ app.get('/get_balance', (req, res) => {
   const userId = req.query.user_id;
   if (!userId) return res.status(400).json({ error: 'user_id керек' });
   const balances = readBalances();
-  if (!balances[userId]) balances[userId] = 100; // жаңа ойыншыға бастапқы баланс
+  if (!balances[userId]) balances[userId] = 0; // жаңа ойыншыға бастапқы баланс
   writeBalances(balances);
   res.json({ balance: balances[userId] });
 });

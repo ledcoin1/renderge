@@ -1,40 +1,67 @@
-const express = require('express');
-const fs = require('fs');
-const cors = require('cors');
+const express = require("express");
+const fs = require("fs");
+const cors = require("cors");
+const path = require("path");
+
 const app = express();
+app.use(cors());
 app.use(express.json());
-app.use(cors()); // Mini App серверге сұрау жіберу үшін
 
-const BALANCE_FILE = 'balances.json';
+const DATA_FILE = path.join(__dirname, "balances.json");
 
-// Баланстарды оқу/жазу
-function readBalances() {
-  if (!fs.existsSync(BALANCE_FILE)) return {};
-  return JSON.parse(fs.readFileSync(BALANCE_FILE));
-}
-function writeBalances(balances) {
-  fs.writeFileSync(BALANCE_FILE, JSON.stringify(balances, null, 2));
+function readData() {
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, "{}");
+  }
+  return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
 }
 
-// Баланс алу
-app.get('/get_balance', (req, res) => {
+function writeData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
+app.get("/get_balance", (req, res) => {
   const userId = req.query.user_id;
-  if (!userId) return res.status(400).json({ error: 'user_id керек' });
-  const balances = readBalances();
-  if (!balances[userId]) balances[userId] = 0; // жаңа ойыншыға бастапқы баланс
-  writeBalances(balances);
-  res.json({ balance: balances[userId] });
+
+  if (!userId) {
+    return res.status(400).json({ error: "user_id жоқ" });
+  }
+
+  const data = readData();
+
+  if (!data[userId]) {
+    data[userId] = 100;
+    writeData(data);
+  }
+
+  res.json({ balance: data[userId] });
 });
 
-// Баланс жаңарту
-app.post('/update_balance', (req, res) => {
+app.post("/update_balance", (req, res) => {
   const { user_id, amount } = req.body;
-  if (!user_id || typeof amount !== 'number') return res.status(400).json({ error: 'Дұрыс дерек жоқ' });
-  const balances = readBalances();
-  if (!balances[user_id]) balances[user_id] = 100;
-  balances[user_id] += amount;
-  writeBalances(balances);
-  res.json({ balance: balances[user_id] });
+
+  if (!user_id || typeof amount !== "number") {
+    return res.status(400).json({ error: "Қате дерек" });
+  }
+
+  const data = readData();
+
+  if (!data[user_id]) {
+    data[user_id] = 100;
+  }
+
+  data[user_id] += amount;
+  writeData(data);
+
+  res.json({ balance: data[user_id] });
 });
 
-app.listen(3000, () => console.log('Server running on http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
+});

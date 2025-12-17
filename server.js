@@ -1,77 +1,114 @@
-const express = require('express');
-const cors = require('cors');
-const { MongoClient } = require('mongodb');
+const express = require("express");
+const cors = require("cors");
+const { MongoClient } = require("mongodb");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Render-де Environment Variable-де MONGO_URI деп қою керек
-const client = new MongoClient(process.env.MONGO_URI || 'mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false');
+// ENV: MONGO_URI
+const client = new MongoClient(
+  process.env.MONGO_URI ||
+  "mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false"
+);
 
-let users;
+let units;
 
-async function connectDB() {
-  try {
-    await client.connect();
-    const db = client.db('telegram_balance_app');
-    users = db.collection('users');
-    console.log('MongoDB connected, users collection ready');
-  } catch (err) {
-    console.error('MongoDB connection error:', err);
-  }
+async function boot() {
+  await client.connect();
+  const db = client.db("telegram_balance_app");
+  units = db.collection("users");
+  console.log("core ready");
 }
 
-// Ойыншының балансын алу
-app.get('/get_balance', async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) return res.status(400).json({ error: 'user_id required' });
+/* =========================
+   ENERGY (BALANCE) SECTION
+   ========================= */
 
-  try {
-    let user = await users.findOne({ user_id });
-    if (!user) {
-      await users.insertOne({ user_id, balance: 0 });
-      user = { user_id, balance: 0 };
-    }
-    res.json({ user_id: user.user_id, balance: user.balance });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+// GET /balance/:id  (frontend соны шақырады)
+app.get("/balance/:id", async (req, res) => {
+  const id = req.params.id;
+
+  let unit = await units.findOne({ uid: id });
+  if (!unit) {
+    await units.insertOne({ uid: id, energy: 0 });
+    unit = { uid: id, energy: 0 };
   }
+
+  res.json({ balance: unit.energy });
 });
 
-// Админ эндпоинт: балансты өзгерту
-app.post('/set_balance', async (req, res) => {
+// ADMIN / PANEL
+app.post("/set_balance", async (req, res) => {
   const { user_id, balance } = req.body;
-  if (!user_id || balance === undefined) return res.status(400).json({ error: 'user_id and balance required' });
 
-  try {
-    const result = await users.updateOne(
-      { user_id },
-      { $set: { balance: Number(balance) } },
-      { upsert: true }
-    );
-    res.json({ success: true, result });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
+  await units.updateOne(
+    { uid: user_id },
+    { $set: { energy: Number(balance) } },
+    { upsert: true }
+  );
+
+  res.json({ ok: true });
 });
+
+/* =========================
+   GAME FLOW (RPS)
+   ========================= */
+
+app.post("/syncFlow", async (req, res) => {
+  const { id, input, mode, bet, choice } = req.body;
+
+  const value = Number(input ?? bet);
+  const pick = mode ?? choice;
+
+  let unit = await units.findOne({ uid: id });
+  if (!unit || unit.energy < value) {
+    return res.json({
+      result: "Not enough energy",
+      win: false,
+      draw: false,
+      balance: unit?.energy ?? 0
+    });
+  }
+
+  const bot = ["rock", "paper", "scissors"][
+    Math.floor(Math.random() * 3)
+  ];
+
+  let win = false;
+  let draw = false;
+
+  if (pick === bot) draw = true;
+  else if (
+    (pick === "rock" && bot === "scissors") ||
+    (pick === "paper" && bot === "rock") ||
+    (pick === "scissors" && bot === "paper")
+  ) win = true;
+
+  let delta = 0;
+  if (win) delta = value * 1.85;
+  else if (!draw) delta = -value;
+
+  const newEnergy = unit.energy + delta;
+
+  await units.updateOne(
+    { uid: id },
+    { $set: { energy: newEnergy } }
+  );
+
+  res.json({
+    bot,
+    win,
+    draw,
+    result: win ? "rafg" : draw ? "moxo" : "teln",
+    balance: newEnergy
+  });
+});
+
+/* ========================= */
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  connectDB();
+  boot();
+  console.log("server live on", PORT);
 });
-
-// Барлық ойыншыларды алу (админ үшін)
-app.get('/get_all_users', async (req, res) => {
-  try {
-    const allUsers = await users.find().toArray();
-    res.json(allUsers);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-

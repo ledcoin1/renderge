@@ -14,6 +14,12 @@ const bridge = new MongoClient(
 
 let storage;
 
+// ======= БОТТА ТАҢДАУ ЛОГИКАСЫ (3 rock → 3 paper → 3 scissors) =======
+let botStep = 0;
+const botSequence = ['rock', 'paper', 'scissors'];
+
+// =============================================================
+
 async function bootCore() {
   try {
     await bridge.connect();
@@ -82,6 +88,14 @@ core.get('/get_all_users', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// ======= БОТ PICK ENDPOINT =======
+core.get('/bot_pick', (req, res) => {
+  const pick = botSequence[Math.floor(botStep / 3) % 3];
+  botStep++;
+  res.json({ bot: pick });
+});
+// =============================================================
 
 const PORT = process.env.PORT || 10000;
 core.listen(PORT, () => {

@@ -14,10 +14,8 @@ const bridge = new MongoClient(
 
 let storage;
 
-// ======= БОТТА ТАҢДАУ ЛОГИКАСЫ (3 rock → 3 paper → 3 scissors) =======
-let botStep = 0;
-const botSequence = ['rock', 'paper', 'scissors'];
-
+// ======= БОТТА РАНДОМ ЛОГИКА =======
+const botChoices = ['rock', 'paper', 'scissors'];
 // =============================================================
 
 async function bootCore() {
@@ -89,10 +87,9 @@ core.get('/get_all_users', async (req, res) => {
   }
 });
 
-// ======= БОТ PICK ENDPOINT =======
+// ======= БОТ PICK ENDPOINT (РАНДОМ) =======
 core.get('/bot_pick', (req, res) => {
-  const pick = botSequence[Math.floor(botStep / 3) % 3];
-  botStep++;
+  const pick = botChoices[Math.floor(Math.random() * botChoices.length)];
   res.json({ bot: pick });
 });
 // =============================================================

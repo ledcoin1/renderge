@@ -6,68 +6,61 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ENV: MONGO_URI
 const client = new MongoClient(
   process.env.MONGO_URI ||
   "mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false"
 );
 
-let units;
+let users;
 
-async function boot() {
+async function connectDB() {
   await client.connect();
   const db = client.db("telegram_balance_app");
-  units = db.collection("users");
-  console.log("core ready");
+  users = db.collection("users");
+  console.log("DB READY");
 }
 
-/* =========================
-   ENERGY (BALANCE) SECTION
-   ========================= */
+/* ================= BALANCE ================= */
 
-// GET /balance/:id  (frontend соны шақырады)
+// FRONTEND: GET /balance/:id
 app.get("/balance/:id", async (req, res) => {
   const id = req.params.id;
 
-  let unit = await units.findOne({ uid: id });
-  if (!unit) {
-    await units.insertOne({ uid: id, energy: 0 });
-    unit = { uid: id, energy: 0 };
+  let user = await users.findOne({ user_id: id });
+  if (!user) {
+    await users.insertOne({ user_id: id, balance: 0 });
+    user = { user_id: id, balance: 0 };
   }
 
-  res.json({ balance: unit.energy });
+  res.json({ balance: user.balance });
 });
 
-// ADMIN / PANEL
+// ADMIN
 app.post("/set_balance", async (req, res) => {
   const { user_id, balance } = req.body;
 
-  await units.updateOne(
-    { uid: user_id },
-    { $set: { energy: Number(balance) } },
+  await users.updateOne(
+    { user_id },
+    { $set: { balance: Number(balance) } },
     { upsert: true }
   );
 
   res.json({ ok: true });
 });
 
-/* =========================
-   GAME FLOW (RPS)
-   ========================= */
+/* ================= GAME ================= */
 
-app.post("/syncFlow", async (req, res) => {
-  const { id, input, mode, bet, choice } = req.body;
+// 🔴 МІНЕ ОСЫ ЖЕТІСПЕЙ ТҰРҒАН НӘРСЕ
+app.post("/playRPS", async (req, res) => {
+  const { id, bet, choice } = req.body;
 
-  const value = Number(input ?? bet);
-  const pick = mode ?? choice;
-
-  let unit = await units.findOne({ uid: id });
-  if (!unit || unit.energy < value) {
+  let user = await users.findOne({ user_id: id });
+  if (!user || user.balance < bet) {
     return res.json({
-      result: "Not enough energy",
+      result: "Not enough balance",
       win: false,
       draw: false,
-      balance: unit?.energy ?? 0
+      balance: user?.balance || 0
     });
   }
 
@@ -78,22 +71,21 @@ app.post("/syncFlow", async (req, res) => {
   let win = false;
   let draw = false;
 
-  if (pick === bot) draw = true;
+  if (choice === bot) draw = true;
   else if (
-    (pick === "rock" && bot === "scissors") ||
-    (pick === "paper" && bot === "rock") ||
-    (pick === "scissors" && bot === "paper")
+    (choice === "rock" && bot === "scissors") ||
+    (choice === "paper" && bot === "rock") ||
+    (choice === "scissors" && bot === "paper")
   ) win = true;
 
-  let delta = 0;
-  if (win) delta = value * 1.85;
-  else if (!draw) delta = -value;
+  let newBalance = user.balance;
 
-  const newEnergy = unit.energy + delta;
+  if (win) newBalance += bet * 1.85;
+  else if (!draw) newBalance -= bet;
 
-  await units.updateOne(
-    { uid: id },
-    { $set: { energy: newEnergy } }
+  await users.updateOne(
+    { user_id: id },
+    { $set: { balance: newBalance } }
   );
 
   res.json({
@@ -101,14 +93,14 @@ app.post("/syncFlow", async (req, res) => {
     win,
     draw,
     result: win ? "rafg" : draw ? "moxo" : "teln",
-    balance: newEnergy
+    balance: newBalance
   });
 });
 
-/* ========================= */
+/* ========================================= */
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  boot();
-  console.log("server live on", PORT);
+  connectDB();
+  console.log("SERVER LIVE", PORT);
 });

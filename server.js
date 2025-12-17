@@ -1,4 +1,4 @@
-иә толық міне ауыстырып өзіме қайтар , const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const { MongoClient } = require('mongodb');
 
@@ -74,3 +74,4 @@ app.get('/get_all_users', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+

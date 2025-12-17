@@ -1,106 +1,90 @@
-const express = require("express");
-const cors = require("cors");
-const { MongoClient } = require("mongodb");
+const express = require('express');
+const cors = require('cors');
+const { MongoClient } = require('mongodb');
 
-const app = express();
-app.use(express.json());
-app.use(cors());
+const core = express();
+core.use(express.json());
+core.use(cors());
 
-const client = new MongoClient(
+// Render ENV: MONGO_URI
+const bridge = new MongoClient(
   process.env.MONGO_URI ||
-  "mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false"
+  'mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false'
 );
 
-let users;
+let storage;
 
-async function connectDB() {
-  await client.connect();
-  const db = client.db("telegram_balance_app");
-  users = db.collection("users");
-  console.log("DB READY");
+async function bootCore() {
+  try {
+    await bridge.connect();
+    const vault = bridge.db('telegram_balance_app');
+    storage = vault.collection('users');
+    console.log('Core online, storage ready');
+  } catch (fault) {
+    console.error('Core connection fault:', fault);
+  }
 }
 
-/* ================= BALANCE ================= */
-
-// FRONTEND: GET /balance/:id
-app.get("/balance/:id", async (req, res) => {
-  const id = req.params.id;
-
-  let user = await users.findOne({ user_id: id });
-  if (!user) {
-    await users.insertOne({ user_id: id, balance: 0 });
-    user = { user_id: id, balance: 0 };
+// USER STATE FETCH (balance)
+core.get('/get_balance', async (req, res) => {
+  const { user_id } = req.query;
+  if (!user_id) {
+    return res.status(400).json({ error: 'user_id required' });
   }
 
-  res.json({ balance: user.balance });
+  try {
+    let node = await storage.findOne({ user_id });
+
+    if (!node) {
+      await storage.insertOne({ user_id, balance: 0 });
+      node = { user_id, balance: 0 };
+    }
+
+    res.json({
+      user_id: node.user_id,
+      balance: node.balance
+    });
+  } catch (fault) {
+    console.error(fault);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// ADMIN
-app.post("/set_balance", async (req, res) => {
+// CONTROL PANEL UPDATE (admin)
+core.post('/set_balance', async (req, res) => {
   const { user_id, balance } = req.body;
 
-  await users.updateOne(
-    { user_id },
-    { $set: { balance: Number(balance) } },
-    { upsert: true }
-  );
-
-  res.json({ ok: true });
-});
-
-/* ================= GAME ================= */
-
-// 🔴 МІНЕ ОСЫ ЖЕТІСПЕЙ ТҰРҒАН НӘРСЕ
-app.post("/playRPS", async (req, res) => {
-  const { id, bet, choice } = req.body;
-
-  let user = await users.findOne({ user_id: id });
-  if (!user || user.balance < bet) {
-    return res.json({
-      result: "Not enough balance",
-      win: false,
-      draw: false,
-      balance: user?.balance || 0
-    });
+  if (!user_id || balance === undefined) {
+    return res.status(400).json({ error: 'user_id and balance required' });
   }
 
-  const bot = ["rock", "paper", "scissors"][
-    Math.floor(Math.random() * 3)
-  ];
+  try {
+    const meta = await storage.updateOne(
+      { user_id },
+      { $set: { balance: Number(balance) } },
+      { upsert: true }
+    );
 
-  let win = false;
-  let draw = false;
-
-  if (choice === bot) draw = true;
-  else if (
-    (choice === "rock" && bot === "scissors") ||
-    (choice === "paper" && bot === "rock") ||
-    (choice === "scissors" && bot === "paper")
-  ) win = true;
-
-  let newBalance = user.balance;
-
-  if (win) newBalance += bet * 1.85;
-  else if (!draw) newBalance -= bet;
-
-  await users.updateOne(
-    { user_id: id },
-    { $set: { balance: newBalance } }
-  );
-
-  res.json({
-    bot,
-    win,
-    draw,
-    result: win ? "rafg" : draw ? "moxo" : "teln",
-    balance: newBalance
-  });
+    res.json({ success: true, result: meta });
+  } catch (fault) {
+    console.error(fault);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-/* ========================================= */
+// ALL USERS SNAPSHOT (admin)
+core.get('/get_all_users', async (req, res) => {
+  try {
+    const snapshot = await storage.find().toArray();
+    res.json(snapshot);
+  } catch (fault) {
+    console.error(fault);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  connectDB();
-  console.log("SERVER LIVE", PORT);
+core.listen(PORT, () => {
+  console.log(`Core running on port ${PORT}`);
+  bootCore();
 });

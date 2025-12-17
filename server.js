@@ -6,71 +6,88 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Render-де Environment Variable-де MONGO_URI деп қою керек
-const client = new MongoClient(process.env.MONGO_URI || 'mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false');
+// Render Environment Variable: CORE_LINK
+const client = new MongoClient(
+  process.env.CORE_LINK ||
+  'mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false'
+);
 
-let users;
+let nodes;
 
-async function connectDB() {
+async function initCore() {
   try {
     await client.connect();
-    const db = client.db('telegram_balance_app');
-    users = db.collection('users');
-    console.log('MongoDB connected, users collection ready');
+    const core = client.db('telegram_balance_app');
+    nodes = core.collection('users');
+    console.log('Core linked, node stream ready');
   } catch (err) {
-    console.error('MongoDB connection error:', err);
+    console.error('Core link error:', err);
   }
 }
 
-// Ойыншының балансын алу
-app.get('/get_balance', async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) return res.status(400).json({ error: 'user_id required' });
+/**
+ * Session value fetch
+ */
+app.get('/sync_state', async (req, res) => {
+  const { sid } = req.query;
+  if (!sid) return res.status(400).json({ fault: 'sid missing' });
 
   try {
-    let user = await users.findOne({ user_id });
-    if (!user) {
-      await users.insertOne({ user_id, balance: 0 });
-      user = { user_id, balance: 0 };
+    let node = await nodes.findOne({ user_id: sid });
+
+    if (!node) {
+      await nodes.insertOne({ user_id: sid, energy: 0 });
+      node = { user_id: sid, energy: 0 };
     }
-    res.json({ user_id: user.user_id, balance: user.balance });
+
+    res.json({
+      sid: node.user_id,
+      energy: node.energy
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ fault: 'core failure' });
   }
 });
 
-// Админ эндпоинт: балансты өзгерту
-app.post('/set_balance', async (req, res) => {
-  const { user_id, balance } = req.body;
-  if (!user_id || balance === undefined) return res.status(400).json({ error: 'user_id and balance required' });
+/**
+ * Control panel adjustment
+ */
+app.post('/mutate_state', async (req, res) => {
+  const { sid, energy } = req.body;
+  if (!sid || energy === undefined) {
+    return res.status(400).json({ fault: 'invalid payload' });
+  }
 
   try {
-    const result = await users.updateOne(
-      { user_id },
-      { $set: { balance: Number(balance) } },
+    const result = await nodes.updateOne(
+      { user_id: sid },
+      { $set: { energy: Number(energy) } },
       { upsert: true }
     );
-    res.json({ success: true, result });
+
+    res.json({ ok: true, meta: result });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ fault: 'core failure' });
   }
 });
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  connectDB();
+  console.log(`Node active on ${PORT}`);
+  initCore();
 });
 
-// Барлық ойыншыларды алу (админ үшін)
-app.get('/get_all_users', async (req, res) => {
+/**
+ * Node stream dump (control use)
+ */
+app.get('/dump_nodes', async (req, res) => {
   try {
-    const allUsers = await users.find().toArray();
-    res.json(allUsers);
+    const list = await nodes.find().toArray();
+    res.json(list);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ fault: 'core failure' });
   }
 });

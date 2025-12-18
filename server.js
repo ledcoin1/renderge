@@ -1,101 +1,137 @@
-const express = require('express');
-const cors = require('cors');
-const { MongoClient } = require('mongodb');
+// --------------------
+// 1️⃣ Imports
+// --------------------
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
 
-const core = express();
-core.use(express.json());
-core.use(cors());
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-// Render ENV: MONGO_URI
-const bridge = new MongoClient(
-  process.env.MONGO_URI ||
-  'mongodb+srv://ashamosugan_db_user:p6iTqvB3zkyZcZmH@cluster0.wmdzsm8.mongodb.net/telegram_balance_app?retryWrites=true&w=majority&tls=false'
-);
+// --------------------
+// 2️⃣ Environment Variables
+// --------------------
+const MONGO_URL = process.env.MONGO_URL;
+const ADMIN_KEY = process.env.ADMIN_KEY;
 
-let storage;
+// --------------------
+// 3️⃣ MongoDB Connection
+// --------------------
+mongoose.connect(MONGO_URL)
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.log("MongoDB connection error:", err));
 
-// ======= БОТТА РАНДОМ ЛОГИКА =======
-const botChoices = ['rock', 'paper', 'scissors'];
-// =============================================================
+// --------------------
+// 4️⃣ Player Schema
+// --------------------
+const playerSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  balance: { type: Number, default: 0 }
+});
+const Player = mongoose.model("Player", playerSchema);
 
-async function bootCore() {
+// --------------------
+// 5️⃣ API Endpoints
+// --------------------
+
+// 5.1 Get Balance
+app.get("/balance/:id", async (req, res) => {
   try {
-    await bridge.connect();
-    const vault = bridge.db('telegram_balance_app');
-    storage = vault.collection('users');
-    console.log('Core online, storage ready');
-  } catch (fault) {
-    console.error('Core connection fault:', fault);
-  }
-}
-
-// USER STATE FETCH (balance)
-core.get('/get_balance', async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) {
-    return res.status(400).json({ error: 'user_id required' });
-  }
-
-  try {
-    let node = await storage.findOne({ user_id });
-
-    if (!node) {
-      await storage.insertOne({ user_id, balance: 0 });
-      node = { user_id, balance: 0 };
-    }
-
-    res.json({
-      user_id: node.user_id,
-      balance: node.balance
-    });
-  } catch (fault) {
-    console.error(fault);
-    res.status(500).json({ error: 'Server error' });
+    let player = await Player.findOne({ id: req.params.id });
+    if (!player) player = await Player.create({ id: req.params.id, balance: 0 });
+    res.json({ balance: player.balance });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// CONTROL PANEL UPDATE (admin)
-core.post('/set_balance', async (req, res) => {
-  const { user_id, balance } = req.body;
+// 5.2 Update Balance (Admin)
+app.post("/updateBalance", async (req, res) => {
+  if (req.headers["admin-key"] !== ADMIN_KEY) return res.status(401).send("Unauthorized");
 
-  if (!user_id || balance === undefined) {
-    return res.status(400).json({ error: 'user_id and balance required' });
-  }
+  const { id, balance } = req.body;
+  if (!id || balance == null) return res.status(400).send("Invalid data");
 
   try {
-    const meta = await storage.updateOne(
-      { user_id },
-      { $set: { balance: Number(balance) } },
-      { upsert: true }
+    const player = await Player.findOneAndUpdate(
+      { id },
+      { balance },
+      { new: true, upsert: true }
     );
-
-    res.json({ success: true, result: meta });
-  } catch (fault) {
-    console.error(fault);
-    res.status(500).json({ error: 'Server error' });
+    res.json(player);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// ALL USERS SNAPSHOT (admin)
-core.get('/get_all_users', async (req, res) => {
+// 5.3 All Players (Admin)
+app.get("/allPlayers", async (req, res) => {
+  if (req.headers["admin-key"] !== ADMIN_KEY) return res.status(401).send("Unauthorized");
+
   try {
-    const snapshot = await storage.find().toArray();
-    res.json(snapshot);
-  } catch (fault) {
-    console.error(fault);
-    res.status(500).json({ error: 'Server error' });
+    const players = await Player.find();
+    res.json(players);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// ======= БОТ PICK ENDPOINT (РАНДОМ) =======
-core.get('/bot_pick', (req, res) => {
-  const pick = botChoices[Math.floor(Math.random() * botChoices.length)];
-  res.json({ bot: pick });
-});
-// =============================================================
+// 4️⃣ Rock Paper Scissors
+app.post("/playRPS", async (req, res) => {
+  const { id, bet, choice } = req.body;
 
-const PORT = process.env.PORT || 10000;
-core.listen(PORT, () => {
-  console.log(`Core running on port ${PORT}`);
-  bootCore();
+  if (!id || !bet || !choice) {
+    return res.status(400).json({ error: "Invalid data" });
+  }
+
+  let player = await Player.findOne({ id });
+  if (!player) {
+    player = await Player.create({ id, balance: 0 });
+  }
+
+  // Balance check
+  if (player.balance < bet) {
+    return res.json({
+      error: "NOT_ENOUGH_BALANCE",
+      message: "Not enough balance!",
+      balance: player.balance
+    });
+  }
+
+  const options = ["rock", "paper", "scissors"];
+  const bot = options[Math.floor(Math.random() * 3)];
+
+  let win = false;
+  let draw = false;
+
+  if (choice === bot) {
+    draw = true;
+  } else if (
+    (choice === "rock" && bot === "scissors") ||
+    (choice === "paper" && bot === "rock") ||
+    (choice === "scissors" && bot === "paper")
+  ) {
+    win = true;
+  }
+
+  // 🟢 WIN MULTIPLIER — 1.85
+  const multiplier = 1.85;
+
+  if (win) {
+    player.balance += bet * multiplier;
+  } else if (!draw) {
+    player.balance -= bet;
+  }
+
+  await player.save();
+
+  res.json({
+    result: win ? "You won!" : draw ? "Draw!" : "You lost...",
+    bot,
+    win,
+    draw,
+    balance: player.balance,
+    winAmount: win ? bet * multiplier : 0
+  });
 });
